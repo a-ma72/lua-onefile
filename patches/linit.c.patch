@@ -1,0 +1,10 @@
+--- a/linit.c
++++ b/linit.c
+@@ -49,6 +49,7 @@
+   {LUA_STRLIBNAME, luaopen_string},
+   {LUA_MATHLIBNAME, luaopen_math},
+   {LUA_UTF8LIBNAME, luaopen_utf8},
++  {LUA_LFSLIBNAME, luaopen_lfs},
+   {LUA_DBLIBNAME, luaopen_debug},
+   {NULL, NULL}
+ };

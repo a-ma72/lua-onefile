@@ -1,0 +1,84 @@
+name: Build Lua as one file with LFS and create a release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: cmd
+
+    env:
+      LFS_REPO: https://github.com/lunarmodules/luafilesystem.git
+      LUA_DIR: lua
+      LFS_DIR: luafilesystem
+
+    steps:
+    - name: Checkout current repo (for tag context)
+      uses: actions/checkout@v4
+
+    - name: Install build tools
+      uses: ilammy/msvc-dev-cmd@v1
+
+    - name: Download Lua source archive
+      shell: pwsh
+      run: |
+        curl -LO https://www.lua.org/ftp/lua-5.4.8.tar.gz
+        tar -xzf lua-5.4.8.tar.gz
+        Rename-Item -Path lua-5.4.8 -NewName $env:LUA_DIR
+
+    - name: Clone LuaFileSystem
+      shell: cmd
+      run: |
+        git clone %LFS_REPO% %LFS_DIR%
+
+    - name: Patch Lua to statically include LFS
+      shell: pwsh
+      run: |
+        cd (Join-Path $env:LUA_DIR 'src')
+    
+        # Create wrapper C file for LFS
+        Set-Content lfs_static.c '#define LUA_LIB'
+        Add-Content lfs_static.c '#include "../../luafilesystem/src/lfs.c"'
+    
+        # Apply patches
+        patch -p1 -i "$env:GITHUB_WORKSPACE\patches\linit.c.patch"
+        patch -p1 -i "$env:GITHUB_WORKSPACE\patches\lualib.h.patch"
+        patch -p1 -i "$env:GITHUB_WORKSPACE\patches\lfs.h.patch"
+    
+    - name: Build binaries
+      shell: cmd
+      run: |
+        cd %LUA_DIR%
+        mkdir bin
+        cd src
+        xcopy %GITHUB_WORKSPACE%\onelua.c .
+        cl /O2 -I. /Fe:..\bin\lua.exe onelua.c lfs_static.c
+        cl /O2 /DMAKE_LUAC /Fe:..\bin\luac.exe onelua.c
+
+    - name: Package Source
+      shell: cmd
+      run: |
+        mkdir src_pkg
+        xcopy /E /I %LUA_DIR%\src src_pkg\lua
+        xcopy /E /I %LFS_DIR% src_pkg\luafilesystem
+        powershell Compress-Archive -Path src_pkg\* -DestinationPath lua-source.zip
+
+    - name: Package Binaries
+      shell: cmd
+      run: |
+        powershell Compress-Archive -Path %LUA_DIR%\bin\* -DestinationPath lua-binaries.zip
+
+    - name: Upload Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          lua-binaries.zip
+          lua-source.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
